@@ -1,39 +1,179 @@
 package com.example.sampleapp
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.media.MediaRecorder
 import android.os.Bundle
-import com.google.android.material.snackbar.Snackbar
 import androidx.appcompat.app.AppCompatActivity
-import android.view.Menu
-import android.view.MenuItem
+import androidx.core.app.ActivityCompat
 
-import kotlinx.android.synthetic.main.activity_main.*
+import android.util.Log
+import android.view.View.OnClickListener
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.LinearLayout
+
+import android.content.Context
+import android.media.MediaPlayer
+
+import java.io.IOException
+
+private const val LOG_TAG = "AudioRecordTest"
+private const val REQUEST_RECORD_AUDIO_PERMISSION = 200
 
 class MainActivity : AppCompatActivity() {
+    private var fileName: String = ""
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
-        setSupportActionBar(toolbar)
+    private var recordButton: RecordButton? = null
+    private var recorder: MediaRecorder? = null
 
-        fab.setOnClickListener { view ->
-            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null).show()
+    private var playButton: PlayButton? = null
+    private var player: MediaPlayer? = null
+
+    // Requesting permission to RECORD_AUDIO
+    private var permissionToRecordAccepted = false
+    private var permissions: Array<String> = arrayOf(Manifest.permission.RECORD_AUDIO)
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<String>,
+        grantResults: IntArray
+    ) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        permissionToRecordAccepted = if (requestCode == REQUEST_RECORD_AUDIO_PERMISSION) {
+            grantResults[0] == PackageManager.PERMISSION_GRANTED
+        } else {
+            false
+        }
+        if (!permissionToRecordAccepted) finish()
+    }
+
+    private fun onRecord(start: Boolean) = if (start) {
+        startRecording()
+    } else {
+        stopRecording()
+    }
+
+    private fun onPlay(start: Boolean) = if (start) {
+        startPlaying()
+    } else {
+        stopPlaying()
+    }
+
+    private fun startPlaying() {
+        player = MediaPlayer().apply {
+            try {
+                setDataSource(fileName)
+                prepare()
+                start()
+            } catch (e: IOException) {
+                Log.e(LOG_TAG, "prepare() failed")
+            }
         }
     }
 
-    override fun onCreateOptionsMenu(menu: Menu): Boolean {
-        // Inflate the menu; this adds items to the action bar if it is present.
-        menuInflater.inflate(R.menu.menu_main, menu)
-        return true
+    private fun stopPlaying() {
+        player?.release()
+        player = null
     }
 
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        // Handle action bar item clicks here. The action bar will
-        // automatically handle clicks on the Home/Up button, so long
-        // as you specify a parent activity in AndroidManifest.xml.
-        return when (item.itemId) {
-            R.id.action_settings -> true
-            else -> super.onOptionsItemSelected(item)
+    private fun startRecording() {
+        recorder = MediaRecorder().apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC)
+            setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP)
+            setOutputFile(fileName)
+            setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB)
+
+            try {
+                prepare()
+            } catch (e: IOException) {
+                Log.e(LOG_TAG, "prepare() failed")
+            }
+
+            start()
         }
+    }
+
+    private fun stopRecording() {
+        recorder?.apply {
+            stop()
+            release()
+        }
+        recorder = null
+    }
+
+    internal inner class RecordButton(ctx: Context) : Button(ctx) {
+
+        var mStartRecording = true
+
+        var clicker: OnClickListener = OnClickListener {
+            onRecord(mStartRecording)
+            text = when (mStartRecording) {
+                true -> "Stop recording"
+                false -> "Start recording"
+            }
+            mStartRecording = !mStartRecording
+        }
+
+        init {
+            text = "Start recording"
+            setOnClickListener(clicker)
+        }
+    }
+
+    internal inner class PlayButton(ctx: Context) : Button(ctx) {
+        var mStartPlaying = true
+        var clicker: OnClickListener = OnClickListener {
+            onPlay(mStartPlaying)
+            text = when (mStartPlaying) {
+                true -> "Stop playing"
+                false -> "Start playing"
+            }
+            mStartPlaying = !mStartPlaying
+        }
+
+        init {
+            text = "Start playing"
+            setOnClickListener(clicker)
+        }
+    }
+
+    override fun onCreate(icicle: Bundle?) {
+        super.onCreate(icicle)
+
+        // Record to the external cache directory for visibility
+        fileName = "${externalCacheDir?.absolutePath}/audiorecordtest.3gp"
+
+        ActivityCompat.requestPermissions(this, permissions, REQUEST_RECORD_AUDIO_PERMISSION)
+
+        recordButton = RecordButton(this)
+        playButton = PlayButton(this)
+        val ll = LinearLayout(this).apply {
+            addView(
+                recordButton,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    0f
+                )
+            )
+            addView(
+                playButton,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    0f
+                )
+            )
+        }
+        setContentView(ll)
+    }
+
+    override fun onStop() {
+        super.onStop()
+        recorder?.release()
+        recorder = null
+        player?.release()
+        player = null
     }
 }
